@@ -1,5 +1,7 @@
 # Learning DSPy
 
+Backronym: "Declarative Self-improving Language Programs, pythonically."
+
 Just one of the things I'm learning. https://github.com/hchiam/learning
 
 TODO: see how the DSPy framework solves the fragility problem in LLM-based applications by replacing prompting with programming and compiling.
