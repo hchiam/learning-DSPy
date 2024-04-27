@@ -44,6 +44,7 @@ https://dspy-docs.vercel.app/docs/category/deep-dive
 - `turbo.inspect_history(n=1)`
 
 ```py
+# question -> answer
 class BasicQA(dspy.Signature):
     """Answer questions with short factoid answers."""
     question = dspy.InputField()
@@ -62,7 +63,7 @@ print(f"Predicted Answer: {prediction.answer}")
 - `topK_passages = retrieve(dev_example.question).passages`
 
 ```py
-# context, question --> answer
+# context, question -> answer
 class GenerateAnswer(dspy.Signature):
     """Answer questions with short factoid answers."""
     context = dspy.InputField(desc="may contain relevant facts")
@@ -79,8 +80,8 @@ class RAG(dspy.Module):
     # forward defines control flow: ((question -> context) -> RAG) -> final_prediction
     def forward(self, question):
         context = self.retrieve(question).passages
-        rag_prediction = self.generate_answer(context=context, question=question)
-        final_prediction = dspy.Prediction(context=context, answer=rag_prediction.answer)
+        rag_cot_answer = self.generate_answer(context=context, question=question)
+        final_prediction = dspy.Prediction(context=context, answer=rag_cot_answer.answer)
         return final_prediction
 ```
 
@@ -158,3 +159,54 @@ compiled_rag_retrieval_score = evaluate_on_hotpotqa(compiled_rag, metric=retriev
 Tip: if (predictions correct > retrievals correct) then LM likely relying on memorized knowledge and not on retrievals.
 
 ## Iterate
+
+Tip: if (one search query isn't enough) then "multi-hop" queries:
+
+- (Baleen and GoldEn are examples of multi-hop search systems)
+
+```py
+# context, question -> query
+class GenerateSearchQuery(dspy.Signature):
+    """Write a simple search query that will help answer a complex question."""
+    context = dspy.InputField(desc="may contain relevant facts")
+    # or context = GenerateAnswer.signature.context # to avoid duplicating desc # <- GenerateAnswer
+    question = dspy.InputField()
+    query = dspy.OutputField()
+
+
+from dsp.utils import deduplicate
+
+class SimplifiedBaleen(dspy.Module):
+    # __init__ defines submodules it needs:
+    def __init__(self, passages_per_hop=3, max_hops=2):
+        super().__init__()
+        self.generate_query = [dspy.ChainOfThought(GenerateSearchQuery) for _ in range(max_hops)] # <- GenerateSearchQuery (c, q -> q)
+        self.retrieve = dspy.Retrieve(k=passages_per_hop)
+        self.generate_answer = dspy.ChainOfThought(GenerateAnswer) # <- GenerateAnswer (c, q -> a)
+        self.max_hops = max_hops
+
+    # forward defines control flow: ((context + question) -> query -> passages) -> context -> RAG) -> final_prediction
+    def forward(self, question):
+        context = []
+
+        for hop in range(self.max_hops):
+            query = self.generate_query[hop](
+              context=context,
+              question=question
+            ).query
+
+            passages = self.retrieve(query).passages
+
+            context = deduplicate(context + passages)
+
+        mhs_cot_answer = self.generate_answer(
+          context=context,
+          question=question
+        )
+
+        final_prediction = dspy.Prediction(
+          context=context,
+          answer=mhs_cot_answer.answer
+        )
+        return final_prediction
+```
