@@ -117,6 +117,8 @@ print(f"Predicted Answer: {prediction.answer}")
 turbo.inspect_history(n=1)
 ```
 
+![few-shot RAG COT output](example_prompt_generation.png)
+
 ```py
 for name, parameter in compiled_rag.named_predictors():
     print(name)
